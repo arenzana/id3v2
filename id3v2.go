@@ -455,6 +455,12 @@ func (f *Frame) Text() (string, error) {
 		return "", errors.New("id3: frame uses unsupported encoding")
 	}
 
+        if f.ID == FrameCOMM {
+		data = bytes.TrimSuffix(data, zeroByte)
+		data = bytes.TrimPrefix(data,[]byte("eng"))
+		return string(data), nil
+	}
+	
 	data, err := enc.NewDecoder().Bytes(data)
 	if err != nil {
 		return "", fmt.Errorf("id3: frame has invalid text data: %w", err)
