@@ -20,6 +20,8 @@ import (
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 // This is an implementation of v2.4.0 of the ID3v2 tagging format,
@@ -455,16 +457,45 @@ func (f *Frame) Text() (string, error) {
 		return "", errors.New("id3: frame uses unsupported encoding")
 	}
 
-        if f.ID == FrameCOMM {
+	if f.ID == FrameCOMM {
+		data = f.Data[4:]
 		data = bytes.TrimSuffix(data, zeroByte)
-		data = bytes.TrimPrefix(data,[]byte("eng"))
-		return string(data), nil
+		enc = unicode.UTF16(unicode.BigEndian, unicode.ExpectBOM)
+		data, err := enc.NewDecoder().Bytes(data)
+		if err != nil {
+			return "", fmt.Errorf("id3: frame has invalid text data: %w", err)
+		}
+		data2 := StripNullUnicode(string(data))
+		data2 = StripUnicodeControlCharacters(data2)
+
+		return data2, nil
 	}
-	
+
 	data, err := enc.NewDecoder().Bytes(data)
 	if err != nil {
 		return "", fmt.Errorf("id3: frame has invalid text data: %w", err)
 	}
 
 	return string(data), nil
+}
+
+//StripNullUnicode strips the \u0000 character from a chain.
+func StripNullUnicode(str string) string {
+	isOk := func(r rune) bool {
+		return r == 00
+	}
+	t := transform.Chain(norm.NFKD, transform.RemoveFunc(isOk))
+	str, _, _ = transform.String(t, str)
+	return str
+}
+
+//StripUnicodeControlCharacters Strips Ctl and ext characters from Unicode
+func StripUnicodeControlCharacters(str string) string {
+	isOk := func(r rune) bool {
+		return r < 32 || r >= 127
+	}
+	// The isOk filter is such that there is no need to chain to norm.NFC
+	t := transform.Chain(norm.NFKD, transform.RemoveFunc(isOk))
+	str, _, _ = transform.String(t, str)
+	return str
 }
